@@ -241,6 +241,39 @@ void qpDUNES_printIteration( 	qpData_t* qpData,
 							itLog_t* itLogPtr
 							);
 
+return_t factorizeSubDiagHessian(	qpData_t* const qpData,
+									const matrix_t* const cholSubDiagHessian,
+									const matrix_t* const subDiagHessian, 
+									int_t k,
+									int_t m
+									);
+
+return_t computeSubHessian(	qpData_t* const qpData,
+							const matrix_t* const cholSubDiagHessian,
+							const matrix_t* const subDiagHessian,
+							const matrix_t* const subOffDiagHessian,
+							const vector_t* const subrhs,
+							int_t k,
+							int_t m
+							);	
+
+return_t CRsubstitution(	qpData_t* const qpData,
+							xn_vector_t* const res,
+							const matrix_t* const cholSubDiagHessian,
+							const matrix_t* const subOffDiagHessian,
+							const vector_t* const subrhs
+							);
+
+return_t CRsolve(	qpData_t* const qpData,
+					xn_vector_t* const res,
+					const xn2x_matrix_t* const hessian,
+					const xn_vector_t* const gradient,
+					const matrix_t* const cholSubDiagHessian,
+					const matrix_t* const subDiagHessian,
+					const matrix_t* const subOffDiagHessian,
+					const vector_t* const subrhs,
+					boolean_t* const isHessianRegularized
+					);							
 
 #endif	/* QP42_DUAL_QP_H */
 

@@ -567,6 +567,19 @@ return_t addMultiplyMatrixInvMatrixMatrixT(	qpData_t* const qpData,
 											int_t dim1
 											);
 
+											
+return_t negateMatrix(	matrix_t* const res,
+						int_t len
+						);
+						
+void multiplyMatrixMatrixDenseDense(	real_t* const res,
+										const real_t* const M1,		/**< untransposed matrix */
+										const real_t* const M2,
+										int_t dim0,					/**< leading dimension of untransposed M1 = leading dimension of M2 */
+										int_t dim1,					/**< secondary dimension of untransposed M1 */
+										int_t dim2,					/**< secondary dimension of M2 */
+										boolean_t addToRes			/**< flag to specify whether to overwrite res, or simply add to it */
+										);
 
 
 #endif	/* QP42_MATRIX_VECTOR_H */

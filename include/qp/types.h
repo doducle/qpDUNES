@@ -50,7 +50,7 @@
 /*#define __SUPPRESS_ALL_WARNINGS__*/		/* do not display warnings */
 /*#undef __SUPPRESS_ALL_WARNINGS__*/
 
-/*#define __MEASURE_TIMINGS__*/				/* measure computation times */
+/*#define __MEASURE_TIMINGS__*/			/* measure computation times */
 /*#undef __MEASURE_TIMINGS__*/
 
 /*#define __ANALYZE_FACTORIZATION__*/			/* log inverse Newton Hessian for analysis */
@@ -108,6 +108,7 @@
 	#define _NZ_ (qpData->nZ)
 	#define _NV( I ) (qpData->intervals[ I ]->nV)
 	#define _NI_ (qpData->nI)
+	#define _NL_ (qpData->nL)
 	#define _ND( I ) (qpData->intervals[ I ]->nD)
 	#define _NDTTL_ (qpData->nDttl)
 #endif
@@ -530,6 +531,9 @@ typedef struct
 	real_t regParam;					/**< Levenberg-Marquardt relaxation parameter */
 	
 	nwtnHssnFacAlg_t nwtnHssnFacAlg;
+	
+	boolean_t cyclicReduction;
+	int_t nThreads;
 
 	/* line search options */
 	lineSearchType_t lsType;
@@ -675,6 +679,18 @@ typedef struct
 	
 	qpOptions_t options;
 	
+	/* cyclic reduction */
+	xn2x_matrix_t subDiagHessian;
+	xn2x_matrix_t subOffDiagHessian;
+	xn2x_matrix_t cholSubDiagHessian;
+	xn_vector_t subrhs;
+	
+	xx_matrix_t* xxMatTmpCR;
+	xx_matrix_t* xxMatTmpCR2;
+	x_vector_t* xVecTmpCR;
+	x_vector_t* xVecTmpCR2;
+	x_vector_t* xVecTmpCR3;
+	x_vector_t* sums;	
 	
 	/* workspace */
 	x_vector_t xVecTmp;			/**<  */
@@ -693,6 +709,8 @@ typedef struct
 	
 	/* log */
 	log_t log;
+	
+	uint_t nL;
 
 } qpData_t;
 

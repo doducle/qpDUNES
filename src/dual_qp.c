@@ -38,14 +38,15 @@
  >>>>>>                                           */
 return_t qpDUNES_solve(qpData_t* const qpData) {
 	uint_t ii, kk;
-
+	
 	
 	#ifdef __MEASURE_TIMINGS__
     real_t 	tItStart, tItEnd, tQpStart, tQpEnd, tNwtnSetupStart, tNwtnSetupEnd,
 			tNwtnFactorStart, tNwtnFactorEnd, tNwtnSolveStart, tNwtnSolveEnd,
 			tLineSearchStart, tLineSearchEnd, tDiff;
+	real_t start, ende, totalTime;
 	#endif
-    
+ 
 	return_t statusFlag = QPDUNES_OK; /* generic status flag */
 	int_t lastActSetChangeIdx = _NI_;
 	real_t objValIncumbent = qpData->options.QPDUNES_INFTY;
@@ -132,11 +133,10 @@ return_t qpDUNES_solve(qpData_t* const qpData) {
 	#endif
 
 
-
 	/** LOOP OF NONSMOOTH NEWTON ITERATIONS */
 	/*  ----------------------------------- */
 	for ((*itCntr) = 1; (*itCntr) <= qpData->options.maxIter; ++(*itCntr)) {
-
+		
 		#ifdef __MEASURE_TIMINGS__
 		tItStart = getTime();
 		#endif
@@ -208,51 +208,80 @@ return_t qpDUNES_solve(qpData_t* const qpData) {
 			#ifdef __MEASURE_TIMINGS__
 			tNwtnSetupEnd = getTime();
 			#endif
-
+			
 			/** (1Bb) factorize Newton system */
-			#ifdef __MEASURE_TIMINGS__
-			tNwtnFactorStart = getTime();
-			#endif
-			statusFlag = qpDUNES_factorNewtonSystem(qpData, &(itLogPtr->isHessianRegularized), lastActSetChangeIdx);		/* TODO! can we get a problem with on-the-fly regularization in partial refactorization? might only be partially reg.*/
-			switch (statusFlag) {
-				case QPDUNES_OK:
-					break;
-				default:
-					qpDUNES_printError(qpData, __FILE__, __LINE__,	"Factorization of Newton Equation failed.");
-					if (qpData->options.logLevel >= QPDUNES_LOG_ITERATIONS)	 qpDUNES_logIteration(qpData, itLogPtr, objValIncumbent, lastActSetChangeIdx);
-					return statusFlag;
+			if ( qpData->options.cyclicReduction == QPDUNES_FALSE ) {
+				#ifdef __MEASURE_TIMINGS__
+				start = getTime();
+				#endif
+				
+				#ifdef __MEASURE_TIMINGS__
+				tNwtnFactorStart = getTime();
+				#endif
+				
+				statusFlag = qpDUNES_factorNewtonSystem(qpData, &(itLogPtr->isHessianRegularized), lastActSetChangeIdx);		 /* TODO! can we get a problem with on-the-fly regularization in partial refactorization? might only be partially reg.*/
+				switch (statusFlag) {
+					case QPDUNES_OK:
+						break;
+					default:
+						qpDUNES_printError(qpData, __FILE__, __LINE__,	"Factorization of Newton Equation failed.");
+						if (qpData->options.logLevel >= QPDUNES_LOG_ITERATIONS)	 qpDUNES_logIteration(qpData, itLogPtr, objValIncumbent, lastActSetChangeIdx);
+						return statusFlag;
+				}
+				#ifdef __MEASURE_TIMINGS__
+				tNwtnFactorEnd = getTime();
+				#endif
 			}
-			#ifdef __MEASURE_TIMINGS__
-			tNwtnFactorEnd = getTime();
-			#endif
-
+			
 			/** (1Bc) compute step direction */
 			#ifdef __MEASURE_TIMINGS__
 			tNwtnSolveStart = getTime();
 			#endif
-			switch (qpData->options.nwtnHssnFacAlg) {
-			case QPDUNES_NH_FAC_BAND_FORWARD:
-				statusFlag = qpDUNES_solveNewtonEquation(qpData, &(qpData->deltaLambda), &(qpData->cholHessian), &(qpData->gradient));
-				break;
+			
+			if ( qpData->options.cyclicReduction == QPDUNES_FALSE ){
+				switch (qpData->options.nwtnHssnFacAlg) {
+				case QPDUNES_NH_FAC_BAND_FORWARD:
+					statusFlag = qpDUNES_solveNewtonEquation(qpData, &(qpData->deltaLambda), &(qpData->cholHessian), &(qpData->gradient));
+					break;
 
-			case QPDUNES_NH_FAC_BAND_REVERSE:
-				statusFlag = qpDUNES_solveNewtonEquationBottomUp(qpData, &(qpData->deltaLambda), &(qpData->cholHessian), &(qpData->gradient));
-				break;
+				case QPDUNES_NH_FAC_BAND_REVERSE:
+					statusFlag = qpDUNES_solveNewtonEquationBottomUp(qpData, &(qpData->deltaLambda), &(qpData->cholHessian), &(qpData->gradient));
+					break;
 
-			default:
-				qpDUNES_printError(qpData, __FILE__, __LINE__, "Unknown Newton Hessian factorization algorithm. Cannot do backsolve.");
-				return QPDUNES_ERR_INVALID_ARGUMENT;
+				default:
+					qpDUNES_printError(qpData, __FILE__, __LINE__, "Unknown Newton Hessian factorization algorithm. Cannot do backsolve.");
+					return QPDUNES_ERR_INVALID_ARGUMENT;
+				}
+				#ifdef __MEASURE_TIMINGS__
+				ende = getTime();
+				#endif
 			}
+			else {
+				#ifdef __MEASURE_TIMINGS__
+				start = getTime();
+				#endif
+				statusFlag = CRsolve(qpData,&(qpData->deltaLambda),&(qpData->hessian),&(qpData->gradient),&(qpData->cholSubDiagHessian),&(qpData->subDiagHessian),&(qpData->subOffDiagHessian),&(qpData->subrhs),&(itLogPtr->isHessianRegularized));
+				#ifdef __MEASURE_TIMINGS__
+				ende = getTime();
+				#endif
+			}
+			
 			#ifdef __MEASURE_TIMINGS__
 			tNwtnSolveEnd = getTime();
 			#endif
+			
 			if (statusFlag != QPDUNES_OK) {
 				qpDUNES_printError(qpData, __FILE__, __LINE__,	"Could not compute Newton step direction.");
 				if (qpData->options.logLevel >= QPDUNES_LOG_ITERATIONS)	 qpDUNES_logIteration(qpData, itLogPtr, objValIncumbent, lastActSetChangeIdx);
 				return statusFlag;
 			}
+			
+			#ifdef __MEASURE_TIMINGS__
+			totalTime = ende - start;
+			// printf("Time Solving Newtonsystem: %.10f s\n",totalTime);
+			#endif
 		}
-
+	
 
 		/** (2) do QP solution for full step */
 		#ifdef __MEASURE_TIMINGS__
@@ -528,7 +557,7 @@ return_t qpDUNES_solveAllLocalQPs(	qpData_t* const qpData,
 								)
 {
 	int_t kk;
-#ifndef __QPDUNES_PARALLEL__
+#ifdef __QPDUNES_PARALLEL__
 	int_t errCntr = 0;
 #endif
 	return_t statusFlag = QPDUNES_OK;
@@ -556,7 +585,7 @@ return_t qpDUNES_solveAllLocalQPs(	qpData_t* const qpData,
 		}
 
 		#ifdef __QPDUNES_PARALLEL__
-		/*			qpDUNES_printf("Computed QP %d by thread %d/%d.", kk, omp_get_thread_num(), omp_get_num_threads() );*/			
+					/*qpDUNES_printf("Computed QP %d by thread %d/%d.\n", kk, omp_get_thread_num(), omp_get_num_threads() );*/	
 		#endif
 	}
 
@@ -850,7 +879,7 @@ return_t qpDUNES_factorNewtonSystem( qpData_t* const qpData,
 								  	 boolean_t* const isHessianRegularized,
 								  	 int_t lastActSetChangeIdx
 								  	 )
-{
+{	
 	int_t ii, jj, kk;
 
 	return_t statusFlag;
@@ -859,6 +888,7 @@ return_t qpDUNES_factorNewtonSystem( qpData_t* const qpData,
 
 	xn2x_matrix_t* hessian = &(qpData->hessian);
 	xn2x_matrix_t* cholHessian = &(qpData->cholHessian);
+	//accHessian(0,0,0,0) = 1;
 
 	/* Try to factorize Newton Hessian, to check if positive definite */
 	switch (qpData->options.nwtnHssnFacAlg) {
@@ -874,7 +904,7 @@ return_t qpDUNES_factorNewtonSystem( qpData_t* const qpData,
 			qpDUNES_printError(qpData, __FILE__, __LINE__, "Unknown Newton Hessian factorization algorithm.");
 			return QPDUNES_ERR_INVALID_ARGUMENT;
 	}
-
+	
 	/* check maximum diagonal element */
 	if (statusFlag == QPDUNES_OK) {
 		for (kk = 0; kk < _NI_; ++kk) {
@@ -893,12 +923,11 @@ return_t qpDUNES_factorNewtonSystem( qpData_t* const qpData,
 		}
 	#endif
 
-
 	if ( ( statusFlag == QPDUNES_ERR_DIVISION_BY_ZERO ) || 					/* regularize if Cholesky failed */
 		 ( minDiagElem < qpData->options.newtonHessDiagRegTolerance ) ) 	/* or if diagonal elements are too small */
-	{
+	{	
 		switch (qpData->options.regType) {
-		case QPDUNES_REG_LEVENBERG_MARQUARDT:
+			case QPDUNES_REG_LEVENBERG_MARQUARDT:
 			for (kk = 0; kk < _NI_; ++kk) {
 				for (jj = 0; jj < _NX_; ++jj) {
 					accHessian( kk, 0, jj, jj )+= qpData->options.regParam;
@@ -2304,6 +2333,516 @@ void qpDUNES_printIteration(qpData_t* qpData, itLog_t* itLogPtr) {
 
 }
 /*<<< END OF qpDUNES_printIteration */
+
+
+
+/* ----------------------------------------------
+ * computes Cholesky factor of diagonal blocks of Newton System and Sub-Newton Systems from Cyclic Reduction
+ *
+ >>>>>>                                           */
+return_t factorizeSubDiagHessian(	qpData_t* const qpData,
+									const matrix_t* const cholSubDiagHessian,
+									const matrix_t* const subDiagHessian, 
+									int_t k,
+									int_t m
+									)
+{	if ( k % 2 == 0 ) {
+		uint_t nL = qpData->nL;
+		uint_t nX = qpData->nX;
+		return_t statusFlag;
+		xx_matrix_t* xxMatTmpCR = qpData->xxMatTmpCR;
+		xx_matrix_t* xxMatTmpCR2 = qpData->xxMatTmpCR2;
+	
+		int_t index = ( pow(2,nL+1) - pow(2,nL-m+1) - m )*nX*nX + k*nX*nX;
+
+		statusFlag = qpDUNES_copyArray(xxMatTmpCR[k].data,&(subDiagHessian->data[index]),nX*nX);
+		if ( statusFlag != QPDUNES_OK ) {
+				qpDUNES_printError( qpData, __FILE__, __LINE__, "copy of subDiagHessian failed." );
+				return statusFlag;
+			}
+		statusFlag = denseCholeskyFactorization(qpData,&(xxMatTmpCR2[k]),&(xxMatTmpCR[k]),nX);
+		if ( statusFlag != QPDUNES_OK ) {
+				qpDUNES_printError( qpData, __FILE__, __LINE__, "Cholesky of subDiagHessian failed." );
+				return statusFlag;
+			}
+		statusFlag = qpDUNES_copyArray(&(cholSubDiagHessian->data[index]),xxMatTmpCR2[k].data,nX*nX);
+		if ( statusFlag != QPDUNES_OK ) {
+				qpDUNES_printError( qpData, __FILE__, __LINE__, "copy of cholSubDiagHessian failed." );
+				return statusFlag;
+			}
+	}
+	return QPDUNES_OK;
+}
+
+/* ----------------------------------------------
+ * computes Sub-Newton Systems from Cyclic Reduction
+ *
+ >>>>>>                                           */
+return_t computeSubHessian(	qpData_t* const qpData,
+							const matrix_t* const cholSubDiagHessian,
+							const matrix_t* const subDiagHessian,
+							const matrix_t* const subOffDiagHessian,
+							const vector_t* const subrhs,
+							int_t k,
+							int_t m
+							)
+{	return_t statusFlag;
+	xx_matrix_t* xxMatTmpCR = qpData->xxMatTmpCR;
+	xx_matrix_t* xxMatTmpCR2 = qpData->xxMatTmpCR2;
+	x_vector_t* xVecTmpCR = qpData->xVecTmpCR;	
+	x_vector_t* xVecTmpCR2 = qpData->xVecTmpCR2;	
+	x_vector_t* xVecTmpCR3 = qpData->xVecTmpCR3;	
+	x_vector_t* sums = qpData->sums;	
+
+	int_t index = ( pow(2,_NL_+1) - pow(2,_NL_-(m-1)+1) - (m-1) )*_NX_*_NX_ + (2*k)*_NX_*_NX_;		/* index i- */
+	int_t index1 = ( pow(2,_NL_+1) - pow(2,_NL_-(m-1)+1) - (m-1) )*_NX_*_NX_ + (2*k+1)*_NX_*_NX_;	/* index i */
+	int_t index2 = ( pow(2,_NL_+1) - pow(2,_NL_-(m-1)+1) - (m-1) )*_NX_*_NX_ + (2*k+2)*_NX_*_NX_;	/* index i+ */
+	int_t indexresult = ( pow(2,_NL_+1) - pow(2,_NL_-m+1) - m )*_NX_*_NX_ + k*_NX_*_NX_;
+	
+	/*** compute diagonal sub ***/
+	/* initialize */
+	statusFlag = qpDUNES_copyArray(xxMatTmpCR[k].data,&(subDiagHessian->data[index1]),_NX_*_NX_);
+	if ( statusFlag != QPDUNES_OK ) {
+			qpDUNES_printError( qpData, __FILE__, __LINE__, "copy of subDiagHessian to xxMatTmpCR failed in computeSubHessian." );
+			return statusFlag;
+		}
+
+	/* compute - Ui-' * Wi-^(-1) * Ui-  and add     */
+	statusFlag = backsolveMatrixDenseDenseL(qpData,xxMatTmpCR2[k].data,&(cholSubDiagHessian->data[index]),&(subOffDiagHessian->data[index]),sums[k].data,QPDUNES_FALSE,_NX_,_NX_);
+	if ( statusFlag != QPDUNES_OK ) {
+				qpDUNES_printError( qpData, __FILE__, __LINE__, "Error in computing C.T * A^-1 * C in computeSubHessian." );
+				return statusFlag;
+			}
+	statusFlag = backsolveMatrixDenseDenseL(qpData,xxMatTmpCR2[k].data,&(cholSubDiagHessian->data[index]),xxMatTmpCR2[k].data,sums[k].data,QPDUNES_TRUE,_NX_,_NX_);
+	if ( statusFlag != QPDUNES_OK ) {
+				qpDUNES_printError( qpData, __FILE__, __LINE__, "Error in computing C.T * A^-1 * C in computeSubHessian." );
+				return statusFlag;
+			}
+	negateMatrix(&(xxMatTmpCR2[k]),_NX_*_NX_);
+	multiplyMatrixTMatrixDenseDense(xxMatTmpCR[k].data,&(subOffDiagHessian->data[index]),xxMatTmpCR2[k].data,_NX_,_NX_,_NX_,QPDUNES_TRUE);
+
+	/* compute - Ui * Wi+^(-1) * Ui' and add      */
+	statusFlag = backsolveMatrixDenseDenseTL(qpData,xxMatTmpCR2[k].data,&(cholSubDiagHessian->data[index2]),&(subOffDiagHessian->data[index1]),sums[k].data,QPDUNES_FALSE,_NX_,_NX_);
+	if ( statusFlag != QPDUNES_OK ) {
+				qpDUNES_printError( qpData, __FILE__, __LINE__, "Error in computing C * A^-1 * C.T in computeSubHessian." );
+				return statusFlag;
+			}
+	statusFlag = backsolveMatrixDenseDenseL(qpData,xxMatTmpCR2[k].data,&(cholSubDiagHessian->data[index2]),xxMatTmpCR2[k].data,sums[k].data,QPDUNES_TRUE,_NX_,_NX_);
+	if ( statusFlag != QPDUNES_OK ) {
+				qpDUNES_printError( qpData, __FILE__, __LINE__, "Error in computing C * A^-1 * C.T in computeSubHessian." );
+				return statusFlag;
+			}
+	negateMatrix(&(xxMatTmpCR2[k]),_NX_*_NX_);
+	multiplyMatrixMatrixDenseDense(xxMatTmpCR[k].data,&(subOffDiagHessian->data[index1]),xxMatTmpCR2[k].data,_NX_,_NX_,_NX_,QPDUNES_TRUE);
+	
+	/* write */
+	statusFlag = qpDUNES_copyArray(&(subDiagHessian->data[indexresult]),xxMatTmpCR[k].data,_NX_*_NX_);
+	if ( statusFlag != QPDUNES_OK ) {
+			qpDUNES_printError( qpData, __FILE__, __LINE__, "copy of xxMatTmpCR to subDiagHessian failed in computeSubHessian." );
+			return statusFlag;
+		}
+	
+	
+	/*** compute offdiagonal sub ***/
+	/* compute - Ui * Wi+^(-1) * Ui+ */
+	statusFlag = backsolveMatrixDenseDenseL(qpData,xxMatTmpCR2[k].data,&(cholSubDiagHessian->data[index2]),&(subOffDiagHessian->data[index2]),sums[k].data,QPDUNES_FALSE,_NX_,_NX_);
+	if ( statusFlag != QPDUNES_OK ) {
+				qpDUNES_printError( qpData, __FILE__, __LINE__, "Error in computing C * A^-1 * C in computeSubHessian." );
+				return statusFlag;
+			}
+	statusFlag = backsolveMatrixDenseDenseL(qpData,xxMatTmpCR2[k].data,&(cholSubDiagHessian->data[index2]),xxMatTmpCR2[k].data,sums[k].data,QPDUNES_TRUE,_NX_,_NX_);
+	if ( statusFlag != QPDUNES_OK ) {
+				qpDUNES_printError( qpData, __FILE__, __LINE__, "Error in computing C * A^-1 * C in computeSubHessian." );
+				return statusFlag;
+			}
+	negateMatrix(&(xxMatTmpCR2[k]),_NX_*_NX_);
+	multiplyMatrixMatrixDenseDense(xxMatTmpCR[k].data,&(subOffDiagHessian->data[index1]),xxMatTmpCR2[k].data,_NX_,_NX_,_NX_,QPDUNES_FALSE);
+
+	/* write */
+	statusFlag = qpDUNES_copyArray(&(subOffDiagHessian->data[indexresult]),xxMatTmpCR[k].data,_NX_*_NX_);
+	if ( statusFlag != QPDUNES_OK ) {
+			qpDUNES_printError( qpData, __FILE__, __LINE__, "copy of xxMatTmpCR to subOffDiagHessian failed in computeSubHessian." );
+			return statusFlag;
+		}
+		
+		
+	/*** compute subs for rhs ***/
+	/* compute new index for rhs */
+	int_t indexrhs = ( pow(2,_NL_+1) - pow(2,_NL_-(m-1)+1) - (m-1) )*_NX_ + (2*k)*_NX_;			/* index i- */
+	int_t indexrhs1 = ( pow(2,_NL_+1) - pow(2,_NL_-(m-1)+1) - (m-1) )*_NX_ + (2*k+1)*_NX_;		/* index i */
+	int_t indexrhs2 = ( pow(2,_NL_+1) - pow(2,_NL_-(m-1)+1) - (m-1) )*_NX_ + (2*k+2)*_NX_;		/* index i+ */
+	int_t indexrhsresult = ( pow(2,_NL_+1) - pow(2,_NL_-m+1) - m )*_NX_ + k*_NX_;
+
+	/* initialize */
+	statusFlag = qpDUNES_copyArray(xVecTmpCR[k].data,&(subrhs->data[indexrhs1]),_NX_);
+	if ( statusFlag != QPDUNES_OK ) {
+			qpDUNES_printError( qpData, __FILE__, __LINE__, "copy of subrhs to xVecTmpCR failed in computeSubHessian." );
+			return statusFlag;
+		}
+
+	/* compute Ui-' * Wi-^(-1) * gi-  and subtract    */
+	statusFlag = backsolveDenseL(qpData,xVecTmpCR2[k].data,&(cholSubDiagHessian->data[index]),&(subrhs->data[indexrhs]),QPDUNES_FALSE,_NX_);
+	if ( statusFlag != QPDUNES_OK ) {
+				qpDUNES_printError( qpData, __FILE__, __LINE__, "Error in computing C.T * A^-1 * g in computeSubHessian." );
+				return statusFlag;
+			}
+	statusFlag = backsolveDenseL(qpData,xVecTmpCR2[k].data,&(cholSubDiagHessian->data[index]),xVecTmpCR2[k].data,QPDUNES_TRUE,_NX_);
+	if ( statusFlag != QPDUNES_OK ) {
+				qpDUNES_printError( qpData, __FILE__, __LINE__, "Error in computing C.T * A^-1 * g in computeSubHessian." );
+				return statusFlag;
+			}
+	multiplyMatrixTVectorDense(xVecTmpCR3[k].data,&(subOffDiagHessian->data[index]),xVecTmpCR2[k].data,_NX_,_NX_);
+	addScaledVector(&(xVecTmpCR[k]),-1.0,&(xVecTmpCR3[k]),_NX_);
+	
+	/* compute Ui- * Wi+^(-1) * gi+ and subtract      */
+	statusFlag = backsolveDenseL(qpData,xVecTmpCR2[k].data,&(cholSubDiagHessian->data[index2]),&(subrhs->data[indexrhs2]),QPDUNES_FALSE,_NX_);
+	if ( statusFlag != QPDUNES_OK ) {
+				qpDUNES_printError( qpData, __FILE__, __LINE__, "Error in computing C * A^-1 * g in computeSubHessian." );
+				return statusFlag;
+			}
+	statusFlag = backsolveDenseL(qpData,xVecTmpCR2[k].data,&(cholSubDiagHessian->data[index2]),xVecTmpCR2[k].data,QPDUNES_TRUE,_NX_);
+	if ( statusFlag != QPDUNES_OK ) {
+				qpDUNES_printError( qpData, __FILE__, __LINE__, "Error in computing C * A^-1 * g in computeSubHessian." );
+				return statusFlag;
+			}
+	multiplyMatrixVectorDense(xVecTmpCR3[k].data,&(subOffDiagHessian->data[index1]),xVecTmpCR2[k].data,_NX_,_NX_);
+	addScaledVector(&(xVecTmpCR[k]),-1.0,&(xVecTmpCR3[k]),_NX_);
+
+	/* write */
+	statusFlag = qpDUNES_copyArray(&(subrhs->data[indexrhsresult]),xVecTmpCR[k].data,_NX_);
+	if ( statusFlag != QPDUNES_OK ) {
+			qpDUNES_printError( qpData, __FILE__, __LINE__, "copy of xVecTmpCR to subrhs failed in computeSubHessian." );
+			return statusFlag;
+		}
+
+	return QPDUNES_OK;
+}							
+
+/* ----------------------------------------------
+ * substitution step: solve for res
+ *
+ >>>>>>                                           */	
+return_t CRsubstitution(	qpData_t* const qpData,
+							xn_vector_t* const res,
+							const matrix_t* const cholSubDiagHessian,
+							const matrix_t* const subOffDiagHessian,
+							const vector_t* const subrhs
+							)
+{	
+	int_t kk,mm,pp,index,indexoff,indexrhs,resindex,resdownindex,resupindex;
+	return_t statusFlag = QPDUNES_OK;
+	x_vector_t* xVecTmpCR = qpData->xVecTmpCR;
+	x_vector_t* xVecTmpCR2 = qpData->xVecTmpCR2;		
+
+	for ( mm = _NL_-1; mm >= 0; --mm ) {
+		pp = pow(2,_NL_-mm) - 1;
+		#pragma omp parallel for private(kk,index,indexoff,indexrhs,resindex,resdownindex,resupindex) shared(statusFlag) schedule(static) /*shared(qpData)*/  /* TODO: manage threads outside!*/
+		for ( kk = 0; kk < pp; kk += 2 ) {
+			if ( statusFlag == QPDUNES_OK ) {
+				if ( kk == 0 && kk+1 >= pow(2,_NL_-mm) - 1 ) {
+					index = ( pow(2,_NL_+1) - pow(2,_NL_-mm+1) - mm )*_NX_*_NX_ + kk*_NX_*_NX_;
+					indexrhs = ( pow(2,_NL_+1) - pow(2,_NL_-mm+1) - mm )*_NX_ + kk*_NX_;
+					resindex = ( pow(2,mm) - 1 + kk * pow(2,mm) )*_NX_;
+				
+					/* solve for res using cholesky factor */
+					if ( statusFlag == QPDUNES_OK )
+						statusFlag = backsolveDenseL(qpData,xVecTmpCR[kk].data,&(cholSubDiagHessian->data[index]),&(subrhs->data[indexrhs]),QPDUNES_FALSE,_NX_);
+					#ifndef __QPDUNES_PARALLEL__
+					if ( statusFlag != QPDUNES_OK ) {
+						qpDUNES_printError( qpData, __FILE__, __LINE__, "Error in solving for res in CRsubstitution." );
+						return statusFlag;
+					}
+					#endif
+				
+					if ( statusFlag == QPDUNES_OK )
+						statusFlag = backsolveDenseL(qpData,&(res->data[resindex]),&(cholSubDiagHessian->data[index]),xVecTmpCR[kk].data,QPDUNES_TRUE,_NX_);
+					#ifndef __QPDUNES_PARALLEL__				
+					if ( statusFlag != QPDUNES_OK ) {
+						qpDUNES_printError( qpData, __FILE__, __LINE__, "Error in solving for res in CRsubstitution." );
+						return statusFlag;
+					}
+					#endif
+				}
+				else if ( kk == 0 ) {
+					index = ( pow(2,_NL_+1) - pow(2,_NL_-mm+1) - mm )*_NX_*_NX_ + kk*_NX_*_NX_;
+					indexrhs = ( pow(2,_NL_+1) - pow(2,_NL_-mm+1) - mm )*_NX_ + kk*_NX_;
+					resindex = ( pow(2,mm) - 1 + kk * pow(2,mm) )*_NX_;
+					resupindex = ( pow(2,mm) - 1 + (kk+1) * pow(2,mm) )*_NX_;
+				
+					/*** compute rhs ***/
+					/* initialize */
+					if ( statusFlag == QPDUNES_OK )
+						statusFlag = qpDUNES_copyArray(xVecTmpCR[kk].data,&(subrhs->data[indexrhs]),_NX_);
+					#ifndef __QPDUNES_PARALLEL__
+					if ( statusFlag != QPDUNES_OK ) {
+						qpDUNES_printError( qpData, __FILE__, __LINE__, "copy of subrhs to xVecTmpCR failed in CRsubstitution." );
+						return statusFlag;
+					}
+					#endif
+				
+					/* compute U * resup and subtract */
+					if ( statusFlag == QPDUNES_OK ) {
+						multiplyMatrixVectorDense(xVecTmpCR2[kk].data,&(subOffDiagHessian->data[index]),&(res->data[resupindex]),_NX_,_NX_);
+						addScaledVector(&(xVecTmpCR[kk]),-1.0,&(xVecTmpCR2[kk]),_NX_);
+					}
+					
+					/* solve for res using cholesky factor */
+					if ( statusFlag == QPDUNES_OK )
+						statusFlag = backsolveDenseL(qpData,xVecTmpCR2[kk].data,&(cholSubDiagHessian->data[index]),xVecTmpCR[kk].data,QPDUNES_FALSE,_NX_);
+					#ifndef __QPDUNES_PARALLEL__
+					if ( statusFlag != QPDUNES_OK ) {
+						qpDUNES_printError( qpData, __FILE__, __LINE__, "Error in solving for res in CRsubstitution." );
+						return statusFlag;
+					}
+					#endif
+					if ( statusFlag == QPDUNES_OK )
+						statusFlag = backsolveDenseL(qpData,&(res->data[resindex]),&(cholSubDiagHessian->data[index]),xVecTmpCR2[kk].data,QPDUNES_TRUE,_NX_);
+					#ifndef __QPDUNES_PARALLEL__
+					if ( statusFlag != QPDUNES_OK ) {
+						qpDUNES_printError( qpData, __FILE__, __LINE__, "Error in solving for res in CRsubstitution." );
+						return statusFlag;
+					}
+					#endif
+				}
+				else if ( kk+1 >= pow(2,_NL_-mm) - 1 ) {
+					index = ( pow(2,_NL_+1) - pow(2,_NL_-mm+1) - mm )*_NX_*_NX_ + kk*_NX_*_NX_;
+					indexoff = ( pow(2,_NL_+1) - pow(2,_NL_-mm+1) - mm )*_NX_*_NX_ + (kk-1)*_NX_*_NX_;
+					indexrhs = ( pow(2,_NL_+1) - pow(2,_NL_-mm+1) - mm )*_NX_ + kk*_NX_;
+					resindex = ( pow(2,mm) - 1 + kk * pow(2,mm) )*_NX_;
+					resdownindex = ( pow(2,mm) - 1 + (kk-1) * pow(2,mm) )*_NX_;
+				
+					/*** compute rhs ***/
+					/* initialize */
+					if ( statusFlag == QPDUNES_OK )
+						statusFlag = qpDUNES_copyArray(xVecTmpCR[kk].data,&(subrhs->data[indexrhs]),_NX_);
+					#ifndef __QPDUNES_PARALLEL__
+					if ( statusFlag != QPDUNES_OK ) {
+						qpDUNES_printError( qpData, __FILE__, __LINE__, "copy of subrhs to xVecTmpCR failed in CRsubstitution." );
+						return statusFlag;
+					}
+					#endif
+					/* compute U' * resdown and subtract */
+					if ( statusFlag == QPDUNES_OK ) {
+						multiplyMatrixTVectorDense(xVecTmpCR2[kk].data,&(subOffDiagHessian->data[indexoff]),&(res->data[resdownindex]),_NX_,_NX_);
+						addScaledVector(&(xVecTmpCR[kk]),-1.0,&(xVecTmpCR2[kk]),_NX_);
+					}
+				
+					/* solve for res using cholesky factor */
+					if ( statusFlag == QPDUNES_OK )
+						statusFlag = backsolveDenseL(qpData,xVecTmpCR2[kk].data,&(cholSubDiagHessian->data[index]),xVecTmpCR[kk].data,QPDUNES_FALSE,_NX_);
+					#ifndef __QPDUNES_PARALLEL__
+					if ( statusFlag != QPDUNES_OK ) {
+						qpDUNES_printError( qpData, __FILE__, __LINE__, "Error in solving for res in CRsubstitution." );
+						return statusFlag;
+					}
+					#endif
+					if ( statusFlag == QPDUNES_OK )
+						statusFlag = backsolveDenseL(qpData,&(res->data[resindex]),&(cholSubDiagHessian->data[index]),xVecTmpCR2[kk].data,QPDUNES_TRUE,_NX_);
+					#ifndef __QPDUNES_PARALLEL__
+					if ( statusFlag != QPDUNES_OK ) {
+						qpDUNES_printError( qpData, __FILE__, __LINE__, "Error in solving for res in CRsubstitution." );
+						return statusFlag;
+					}
+					#endif
+				}
+				else {
+					index = ( pow(2,_NL_+1) - pow(2,_NL_-mm+1) - mm )*_NX_*_NX_ + kk*_NX_*_NX_;
+					indexoff = ( pow(2,_NL_+1) - pow(2,_NL_-mm+1) - mm )*_NX_*_NX_ + (kk-1)*_NX_*_NX_;
+					indexrhs = ( pow(2,_NL_+1) - pow(2,_NL_-mm+1) - mm )*_NX_ + kk*_NX_;
+					resindex = ( pow(2,mm) - 1 + kk * pow(2,mm) )*_NX_;
+					resdownindex = ( pow(2,mm) - 1 + (kk-1) * pow(2,mm) )*_NX_;
+					resupindex = ( pow(2,mm) - 1 + (kk+1) * pow(2,mm) )*_NX_;
+				
+					/*** compute rhs ***/
+					/* initialize */
+					if ( statusFlag == QPDUNES_OK )
+						statusFlag = qpDUNES_copyArray(xVecTmpCR[kk].data,&(subrhs->data[indexrhs]),_NX_);
+					#ifndef __QPDUNES_PARALLEL__
+					if ( statusFlag != QPDUNES_OK ) {
+						qpDUNES_printError( qpData, __FILE__, __LINE__, "copy of subrhs to xVecTmpCR failed in CRsubstitution." );
+						return statusFlag;
+					}
+					#endif
+					
+					if ( statusFlag == QPDUNES_OK ) {
+						/* compute U' * resdown and subtract */
+						multiplyMatrixTVectorDense(xVecTmpCR2[kk].data,&(subOffDiagHessian->data[indexoff]),&(res->data[resdownindex]),_NX_,_NX_);
+						addScaledVector(&(xVecTmpCR[kk]),-1.0,&(xVecTmpCR2[kk]),_NX_);
+			
+						/* compute U * resup and subtract */
+						multiplyMatrixVectorDense(xVecTmpCR2[kk].data,&(subOffDiagHessian->data[index]),&(res->data[resupindex]),_NX_,_NX_);
+						addScaledVector(&(xVecTmpCR[kk]),-1.0,&(xVecTmpCR2[kk]),_NX_);
+					}
+			
+					/* solve for res using cholesky factor */
+					if ( statusFlag == QPDUNES_OK )
+						statusFlag = backsolveDenseL(qpData,xVecTmpCR2[kk].data,&(cholSubDiagHessian->data[index]),xVecTmpCR[kk].data,QPDUNES_FALSE,_NX_);
+					#ifndef __QPDUNES_PARALLEL__
+					if ( statusFlag != QPDUNES_OK ) {
+						qpDUNES_printError( qpData, __FILE__, __LINE__, "Error in solving for res in CRsubstitution." );
+						return statusFlag;
+					}
+					#endif
+					if ( statusFlag == QPDUNES_OK )
+						statusFlag = backsolveDenseL(qpData,&(res->data[resindex]),&(cholSubDiagHessian->data[index]),xVecTmpCR2[kk].data,QPDUNES_TRUE,_NX_);
+					#ifndef __QPDUNES_PARALLEL__
+					if ( statusFlag != QPDUNES_OK ) {
+						qpDUNES_printError( qpData, __FILE__, __LINE__, "Error in solving for res in CRsubstitution." );
+						return statusFlag;
+					}
+					#endif
+				}
+			}
+		}
+	}
+	if ( statusFlag != QPDUNES_OK ) {
+			qpDUNES_printError( qpData, __FILE__, __LINE__, "Error in solving for res in CRsubstitution." );
+			return statusFlag;
+		}
+	return QPDUNES_OK;	
+}
+
+/* ----------------------------------------------
+ * whole Cyclic Reduction routine
+ *
+ >>>>>>                                           */
+return_t CRsolve(	qpData_t* const qpData,
+					xn_vector_t* const res,
+					const xn2x_matrix_t* const hessian,
+					const xn_vector_t* const gradient,
+					const matrix_t* const cholSubDiagHessian,
+					const matrix_t* const subDiagHessian,
+					const matrix_t* const subOffDiagHessian,
+					const vector_t* const subrhs,
+					boolean_t* const isHessianRegularized
+					)
+{	
+	int_t ii,jj,kk,mm,pp;
+	return_t statusFlag;
+	
+	/* copy hessian to subDiagHessian and subOffDiagHessian */
+	for ( kk = 0; kk < _NI_; ++kk ) {
+		for ( ii = 0; ii < _NX_; ++ii ) {
+			for ( jj = 0; jj < _NX_; ++jj ) {
+				subDiagHessian->data[kk*_NX_*_NX_ + ii*_NX_ + jj] = accHessian(kk,0,ii,jj);
+				if ( kk > 0 )
+					subOffDiagHessian->data[(kk-1)*_NX_*_NX_ + ii*_NX_ + jj] = accHessian(kk,-1,jj,ii);
+			}
+		}
+	}
+	
+	/* copy gradient to subrhs */
+	statusFlag = qpDUNES_copyArray(subrhs->data,gradient->data,_NX_*_NI_);
+	if ( statusFlag != QPDUNES_OK ) {
+		qpDUNES_printError( qpData, __FILE__, __LINE__, "copy of subrhs to xVecTmpCR failed." );
+		return statusFlag;
+	}
+	
+	/* reduction phase */
+	#ifdef __QPDUNES_PARALLEL__
+	if ( qpData->options.nThreads != 0) {
+		omp_set_num_threads(qpData->options.nThreads);
+	} 
+	#endif
+
+	for ( mm = 0; mm < _NL_; ++mm ) {
+		pp = pow(2,_NL_-mm)-1;
+		#pragma omp parallel for private(kk) shared(statusFlag) schedule(static) /*shared(qpData)*/  /* TODO: manage threads outside!*/
+		for ( kk = 0; kk < pp; ++kk ) {
+			if ( statusFlag == QPDUNES_OK ) {
+				statusFlag = factorizeSubDiagHessian(qpData,cholSubDiagHessian,subDiagHessian,kk,mm);
+			}
+		}
+		if ( statusFlag != QPDUNES_OK )
+			break;
+		else if ( mm < _NL_-1 ) {
+			pp = pow(2,_NL_-mm-1)-1;
+			#pragma omp parallel for private(kk) shared(statusFlag) schedule(static) /*shared(qpData)*/  /* TODO: manage threads outside!*/
+			for( kk = 0; kk < pp; ++kk ) {
+				if ( statusFlag == QPDUNES_OK ) {
+					statusFlag = computeSubHessian(qpData,cholSubDiagHessian,subDiagHessian,subOffDiagHessian,subrhs,kk,mm+1);
+				}
+			}
+			if ( statusFlag != QPDUNES_OK ) {
+				qpDUNES_printError( qpData, __FILE__, __LINE__, "computeSubHessian failed in CRsolve." );
+				return statusFlag;
+			}
+		}
+	}
+
+	/* regularize if Cholesky failed */
+	if ( statusFlag == QPDUNES_ERR_DIVISION_BY_ZERO ) 	
+	{	
+		switch (qpData->options.regType) {
+			case QPDUNES_REG_LEVENBERG_MARQUARDT:
+			qpDUNES_printf( "\n[qpDUNES] Performing Levenberg Marquardt Regularization.\n" );
+			for ( kk = 0; kk < _NI_; ++kk ) {
+				for ( ii = 0; ii < _NX_; ++ii ) {
+					subDiagHessian->data[kk*_NX_*_NX_ + ii*_NX_ + ii] += qpData->options.regParam;
+				}
+			}
+			break;
+			
+			case QPDUNES_REG_NORMALIZED_LEVENBERG_MARQUARDT :
+			qpDUNES_printError(qpData, __FILE__, __LINE__, "QPDUNES_REG_NORMALIZED_LEVENBERG_MARQUARDT is deprecated.");
+			break;
+
+			case QPDUNES_REG_SINGULAR_DIRECTIONS :
+			qpDUNES_printError( qpData, __FILE__, __LINE__, "Regularization with unconstrained Hessian not supported for cyclic reduction." );
+			return QPDUNES_ERR_UNKNOWN_ERROR;
+
+			case QPDUNES_REG_UNCONSTRAINED_HESSIAN :
+			qpDUNES_printError( qpData, __FILE__, __LINE__, "Regularization with unconstrained Hessian not yet implemented." );
+			return QPDUNES_ERR_UNKNOWN_ERROR;
+
+			case QPDUNES_REG_GRADIENT_STEP :
+			*isHessianRegularized = QPDUNES_TRUE;
+			return QPDUNES_ERR_DIVISION_BY_ZERO;
+
+			default:
+			qpDUNES_printError( qpData, __FILE__, __LINE__, "Unknown regularization type.");
+			break;
+		}
+		*isHessianRegularized = QPDUNES_TRUE;
+		statusFlag = QPDUNES_OK;
+		
+		/* refactor Newton Hessian */
+		for ( mm = 0; mm < _NL_; ++mm ) {
+			pp = pow(2,_NL_-mm)-1;
+			#pragma omp parallel for private(kk) shared(statusFlag) schedule(static) /*shared(qpData)*/  /* TODO: manage threads outside!*/
+			for ( kk = 0; kk < pp; ++kk ) {
+				if ( statusFlag == QPDUNES_OK ) {
+					statusFlag = factorizeSubDiagHessian(qpData,cholSubDiagHessian,subDiagHessian,kk,mm);
+				}
+			}
+			if ( statusFlag != QPDUNES_OK )
+				break;
+			else if ( mm < _NL_-1 ) {
+				pp = pow(2,_NL_-mm-1)-1;
+				#pragma omp parallel for private(kk) shared(statusFlag) schedule(static) /*shared(qpData)*/  /* TODO: manage threads outside!*/
+				for( kk = 0; kk < pp; ++kk ) {
+					if ( statusFlag == QPDUNES_OK ) {
+						statusFlag = computeSubHessian(qpData,cholSubDiagHessian,subDiagHessian,subOffDiagHessian,subrhs,kk,mm+1);
+					}
+				}
+				if ( statusFlag != QPDUNES_OK ) {
+					qpDUNES_printError( qpData, __FILE__, __LINE__, "computeSubHessian failed in CRsolve." );
+					return statusFlag;
+				}
+			}
+		}
+	}
+	
+	/* substitution phase: get solution */
+	statusFlag = CRsubstitution(qpData,res,cholSubDiagHessian,subOffDiagHessian,subrhs);
+	if ( statusFlag != QPDUNES_OK ) {
+			qpDUNES_printError( qpData, __FILE__, __LINE__, "CRsubstitution failed in CRsolve." );
+			return statusFlag;
+		}
+	
+	return QPDUNES_OK;
+}
+
 
 /*
  *	end of file

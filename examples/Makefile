@@ -48,7 +48,8 @@ IFLAGS      =  -I. \
 QPDUNES_EXES = \
 	example1${EXE} \
 	nmpcPrototype${EXE}	\
-	doubleIntegrator_mpc
+	doubleIntegrator_mpc \
+	ex${EXE}
 
 
 
@@ -67,6 +68,9 @@ nmpcPrototype${EXE}: nmpcPrototype.${OBJEXT} ../src/libqpdunes.a
 
 doubleIntegrator_mpc${EXE}: doubleIntegrator_mpc.${OBJEXT} ../interfaces/mpc/libmpcDUNES.a ../src/libqpdunes.a
 	${CPP} ${DEF_TARGET} ${CPPFLAGS} $< ${MPCDUNES_LIB} ${QPDUNES_LIB} ${LIBS}
+	
+ex${EXE}: ex.${OBJEXT} ../src/libqpdunes.a
+	${CPP} ${DEF_TARGET} ${CPPFLAGS} $< ${QPDUNES_LIB} ${LIBS}
 
 
 clean:

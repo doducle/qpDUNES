@@ -2016,6 +2016,7 @@ return_t multiplyMatrixTVectorSparse(	real_t* res,
 /*<<< END OF multiplyMatrixVectorSparse */
 
 
+
 /* ----------------------------------------------
  * Dense generic transposed matrix-matrix product
  * res = M1.T*M2
@@ -2274,6 +2275,58 @@ return_t denseCholeskyFactorization(	qpData_t* const qpData,
 }
 /*<<< END OF denseCholeskyFactorization */
 
+/* ----------------------------------------------
+ * ...
+ * 
+ >>>>>                                            */
+return_t negateMatrix(	matrix_t* const res,
+						int_t len
+						)
+{
+	int_t ii;
+	
+	for( ii = 0; ii < len; ++ii ) {
+		res->data[ii] = -res->data[ii];
+	}
+	
+	return QPDUNES_OK;
+}
+/*<<< END OF negateVector */
+
+
+/* ----------------------------------------------
+ * Dense generic transposed matrix-matrix product
+ * res = M1.T*M2
+ *
+ >>>>>                                            */
+void multiplyMatrixMatrixDenseDense(	real_t* const res,
+										const real_t* const M1,		/**< untransposed matrix */
+										const real_t* const M2,
+										int_t dim0,					/**< leading dimension of untransposed M1 = leading dimension of M2 */
+										int_t dim1,					/**< secondary dimension of untransposed M1 */
+										int_t dim2,					/**< secondary dimension of M2 */
+										boolean_t addToRes			/**< flag to specify whether to overwrite res, or simply add to it */
+										)
+{
+	int_t ii, jj, kk;
+
+	/* change multiplication order for more efficient memory access */
+	if ( addToRes != QPDUNES_TRUE ) {
+		for( jj = 0; jj < dim1*dim2; ++jj ) {
+			res[jj] = 0.;
+		}
+	}
+	for( ii = 0; ii < dim0; ++ii ) {
+		for( jj = 0; jj < dim1; ++jj ) {
+			for( kk = 0; kk < dim2; ++kk ) {
+				res[jj*dim2+kk] += M1[jj*dim1+ii] * M2[ii*dim2+kk];
+			}
+		}
+	}
+
+	return;
+}
+/*<<< END OF multiplyMatrixTMatrixDenseDense */
 
 
 /*

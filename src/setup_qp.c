@@ -138,6 +138,36 @@ return_t qpDUNES_setup(	qpData_t* const qpData,
 	/* set incumbent objective function value to minus infinity */
 	qpData->optObjVal = -qpData->options.QPDUNES_INFTY;
 	
+	/* cyclic reduction */
+	if ( qpData->options.cyclicReduction == QPDUNES_TRUE ) {
+		real_t nL = log2(nI+1);
+		if ( ceilf( nL ) != nL ) {
+			qpDUNES_printError( qpData, __FILE__, __LINE__, "Cyclic Reduction enabled. Sorry, nI must be 2^n - 1 for one n = 0,1,2,..." );
+			return QPDUNES_ERR_INVALID_ARGUMENT;
+		}
+		
+		qpData->nL = (uint_t)nL;
+		qpData->subrhs.data  = (real_t*)qpDUNES_calloc( nX*(2*nI-nL),sizeof(real_t) );
+		qpData->subDiagHessian.data = (real_t*)qpDUNES_calloc( nX*((2*nI-nL)*nX),sizeof(real_t) );
+		qpData->subOffDiagHessian.data = (real_t*)qpDUNES_calloc( nX*((2*nI-nL)*nX),sizeof(real_t) );
+		qpData->cholSubDiagHessian.data = (real_t*)qpDUNES_calloc( nX*((2*nI-nL)*nX),sizeof(real_t) );
+		qpData->xxMatTmpCR = (xx_matrix_t*)qpDUNES_calloc( nI,sizeof(xx_matrix_t) );
+		qpData->xxMatTmpCR2 = (xx_matrix_t*)qpDUNES_calloc( nI,sizeof(xx_matrix_t) );
+		for( ii=0; ii<nI; ++ii ){
+			qpData->xxMatTmpCR[ii].data = (real_t*)qpDUNES_calloc( nX*nX,sizeof(real_t) );
+			qpData->xxMatTmpCR2[ii].data = (real_t*)qpDUNES_calloc( nX*nX,sizeof(real_t) );
+		}
+		qpData->xVecTmpCR  = (x_vector_t*)qpDUNES_calloc( nI,sizeof(x_vector_t) );
+		qpData->xVecTmpCR2  = (x_vector_t*)qpDUNES_calloc( nI,sizeof(x_vector_t) );
+		qpData->xVecTmpCR3  = (x_vector_t*)qpDUNES_calloc( nI,sizeof(x_vector_t) );
+		qpData->sums  = (x_vector_t*)qpDUNES_calloc( nI,sizeof(x_vector_t) );
+		for( ii=0; ii<nI; ++ii ){
+			qpData->xVecTmpCR[ii].data  = (real_t*)qpDUNES_calloc( nX,sizeof(real_t) );
+			qpData->xVecTmpCR2[ii].data  = (real_t*)qpDUNES_calloc( nX,sizeof(real_t) );
+			qpData->xVecTmpCR3[ii].data  = (real_t*)qpDUNES_calloc( nX,sizeof(real_t) );
+			qpData->sums[ii].data  = (real_t*)qpDUNES_calloc( nX,sizeof(real_t) );
+		}
+	}
 	
 	/* Set up log struct */
 	if ( qpData->options.logLevel >= QPDUNES_LOG_ITERATIONS )
@@ -327,6 +357,31 @@ return_t qpDUNES_cleanup(	qpData_t* const qpData
 	qpDUNES_free( &(qpData->zxMatTmp.data) );
 	qpDUNES_free( &(qpData->zzMatTmp.data) );
 	qpDUNES_free( &(qpData->zzMatTmp2.data) );
+	
+	
+	/* free cyclic reduction */
+	if ( qpData->options.cyclicReduction == QPDUNES_TRUE ){
+		qpDUNES_free( &(qpData->subrhs.data) );
+		qpDUNES_free( &(qpData->subDiagHessian.data) );
+		qpDUNES_free( &(qpData->subOffDiagHessian.data) );
+		qpDUNES_free( &(qpData->cholSubDiagHessian.data) );
+		for( ii=0; ii<_NI_; ++ii ){
+			qpDUNES_free( &(qpData->xxMatTmpCR[ii].data) );
+			qpDUNES_free( &(qpData->xxMatTmpCR2[ii].data) );
+		}
+		free( qpData->xxMatTmpCR );
+		free( qpData->xxMatTmpCR2 );
+		for( ii=0; ii<_NI_; ++ii ){
+			qpDUNES_free( &(qpData->xVecTmpCR[ii].data) );
+			qpDUNES_free( &(qpData->xVecTmpCR2[ii].data) );
+			qpDUNES_free( &(qpData->xVecTmpCR3[ii].data) );
+			qpDUNES_free( &(qpData->sums[ii].data) );
+		}
+		free( qpData->xVecTmpCR );
+		free( qpData->xVecTmpCR2 );
+		free( qpData->xVecTmpCR3 );
+		free( qpData->sums );
+	}
 	
 	
 	/* free log */
@@ -1214,7 +1269,9 @@ qpOptions_t qpDUNES_setupDefaultOptions(
 	 	 	 	 	 	 	 	 	 	 	 	 	  */
 
 	options.nwtnHssnFacAlg				= QPDUNES_NH_FAC_BAND_REVERSE;
-
+	
+	options.cyclicReduction				= QPDUNES_FALSE;
+	options.nThreads					= 0;				/*< no user specification of number of threads, handled internally by openMP (?) */
 
 	/* line search options */
 	options.lsType							= QPDUNES_LS_ACCELERATED_GRADIENT_BISECTION_LS;
